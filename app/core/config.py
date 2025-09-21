@@ -22,9 +22,9 @@ class AppSettings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     
-    # 数据库配置
-    database_url: str = "postgresql://username:password@localhost:5432/zaobiao_db"
-    test_database_url: str = "postgresql://username:password@localhost:5432/zaobiao_test_db"
+    # 数据库配置 - 开发阶段使用SQLite
+    database_url: str = "sqlite:///./zaobiao.db"
+    test_database_url: str = "sqlite:///./test_zaobiao.db"
     
     # Redis配置
     redis_url: str = "redis://localhost:6379/0"

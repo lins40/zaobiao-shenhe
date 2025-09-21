@@ -8,20 +8,21 @@ from sqlalchemy.pool import StaticPool
 from typing import Generator
 import redis
 from py2neo import Graph
-# from motor.motor_asyncio import AsyncIOMotorClient  # 临时注释，等待兼容性修复
+from motor.motor_asyncio import AsyncIOMotorClient
 import asyncio
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
-# PostgreSQL 数据库配置
+# SQLite 数据库配置 (开发阶段)
 engine = create_engine(
     settings.database_url,
     poolclass=StaticPool,
     pool_pre_ping=True,
-    pool_recycle=300,
-    echo=settings.debug
+    echo=settings.debug,
+    # SQLite特定配置
+    connect_args={"check_same_thread": False}
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -85,7 +86,7 @@ class Neo4jClient:
             self.graph = None
 
 
-# MongoDB 异步客户端 - 临时禁用，等待Motor兼容性修复
+# MongoDB 异步客户端
 class MongoClient:
     """MongoDB异步客户端"""
     
@@ -95,13 +96,15 @@ class MongoClient:
     
     async def get_database(self):
         """获取MongoDB数据库"""
-        # 临时返回None，等待Motor兼容性修复
-        print("⚠️  MongoDB暂时禁用，等待Motor兼容性修复")
-        return None
+        if self.client is None:
+            self.client = AsyncIOMotorClient(settings.mongodb_url)
+            self.database = self.client[settings.mongodb_db_name]
+        return self.database
     
     async def close(self):
         """关闭MongoDB连接"""
-        print("⚠️  MongoDB连接关闭（暂时禁用）")
+        if self.client:
+            self.client.close()
 
 
 # 全局客户端实例
@@ -129,12 +132,15 @@ async def init_databases():
     """初始化所有数据库连接"""
     print("🚀 数据库初始化开始...")
     
-    # 暂时跳过PostgreSQL初始化
+    # 创建SQLite数据库表
     try:
-        # Base.metadata.create_all(bind=engine)  # 临时注释
-        print("⚠️  PostgreSQL初始化暂时跳过")
+        # 导入所有模型以确保表被创建
+        from app.models import Document, User, AuditTask, AuditResult, Rule, RuleCategory
+        
+        Base.metadata.create_all(bind=engine)
+        print("✅ SQLite数据库表创建成功")
     except Exception as e:
-        print(f"❌ PostgreSQL初始化失败: {e}")
+        print(f"❌ SQLite数据库初始化失败: {e}")
     
     # 测试Redis连接
     try:
@@ -150,17 +156,15 @@ async def init_databases():
     except Exception as e:
         print(f"⚠️  Neo4j connection failed: {e}")
     
-    # 测试MongoDB连接 - 临时跳过
+    # 测试MongoDB连接
     try:
         db = await mongo_client.get_database()
-        if db:
-            print("✅ MongoDB connection successful")
-        else:
-            print("⚠️  MongoDB暂时禁用")
+        await db.list_collection_names()
+        print("✅ MongoDB connection successful")
     except Exception as e:
         print(f"⚠️  MongoDB connection failed: {e}")
     
-    print("✅ 数据库初始化完成（部分组件暂时禁用）")
+    print("✅ 数据库初始化完成")
 
 
 async def close_databases():
@@ -168,4 +172,4 @@ async def close_databases():
     redis_client.close()
     neo4j_client.close()
     await mongo_client.close()
-    print("✅ All database connections closed")
+    print("✅ 所有数据库连接已关闭")
