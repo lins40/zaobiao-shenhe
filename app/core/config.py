@@ -40,13 +40,23 @@ class AppSettings(BaseSettings):
     mongodb_url: str = "mongodb://localhost:27017"
     mongodb_db_name: str = "zaobiao_mongo"
     
+    # 数据库开关控制（开发环境）
+    enable_neo4j: bool = False  # 开发环境默认关闭
+    enable_mongodb: bool = False  # 开发环境默认关闭
+    
     # DeepSeek API配置
     deepseek_api_key: str = "your_deepseek_api_key"
     deepseek_base_url: str = "https://api.deepseek.com/v1"
+    deepseek_model: str = "deepseek-chat"
+    deepseek_max_tokens: int = 4000
+    deepseek_temperature: float = 0.7
     
     # TextIn API配置
     textin_api_key: str = "your_textin_api_key"
     textin_base_url: str = "https://api.textin.com"
+    textin_app_id: str = "your_textin_app_id"
+    textin_timeout: int = 300
+    textin_max_file_size: int = 50  # MB
     
     # 文件配置
     upload_dir: str = "./uploads"

@@ -141,35 +141,57 @@ async def init_databases():
         print("✅ SQLite数据库表创建成功")
     except Exception as e:
         print(f"❌ SQLite数据库初始化失败: {e}")
+        raise e  # 主数据库失败则终止启动
     
-    # 测试Redis连接
+    # 测试Redis连接（开发环境可选）
     try:
         redis_client.get_client().ping()
-        print("✅ Redis connection successful")
+        print("✅ Redis连接成功")
     except Exception as e:
-        print(f"⚠️  Redis connection failed: {e}")
+        print(f"⚠️  Redis连接失败（开发环境可继续）: {e}")
     
-    # 测试Neo4j连接
+    # Neo4j连接（开发环境暂时跳过）
     try:
-        neo4j_client.get_graph().run("RETURN 1")
-        print("✅ Neo4j connection successful")
+        if settings.enable_neo4j:
+            neo4j_client.get_graph().run("RETURN 1")
+            print("✅ Neo4j连接成功")
+        else:
+            print("⚠️  Neo4j暂时禁用（等待服务安装）")
     except Exception as e:
-        print(f"⚠️  Neo4j connection failed: {e}")
+        print(f"⚠️  Neo4j连接失败（开发环境跳过）: {e}")
     
-    # 测试MongoDB连接
+    # MongoDB连接（开发环境暂时跳过）
     try:
-        db = await mongo_client.get_database()
-        await db.list_collection_names()
-        print("✅ MongoDB connection successful")
+        if settings.enable_mongodb:
+            db = await mongo_client.get_database()
+            await db.list_collection_names()
+            print("✅ MongoDB连接成功")
+        else:
+            print("⚠️  MongoDB暂时禁用（等待服务安装）")
     except Exception as e:
-        print(f"⚠️  MongoDB connection failed: {e}")
+        print(f"⚠️  MongoDB连接失败（开发环境跳过）: {e}")
     
     print("✅ 数据库初始化完成")
 
 
 async def close_databases():
     """关闭所有数据库连接"""
-    redis_client.close()
-    neo4j_client.close()
-    await mongo_client.close()
+    try:
+        redis_client.close()
+        print("✅ Redis连接已关闭")
+    except Exception as e:
+        print(f"⚠️  Redis关闭异常: {e}")
+    
+    try:
+        neo4j_client.close()
+        print("✅ Neo4j连接已关闭")
+    except Exception as e:
+        print(f"⚠️  Neo4j关闭异常: {e}")
+    
+    try:
+        await mongo_client.close()
+        print("✅ MongoDB连接已关闭")
+    except Exception as e:
+        print(f"⚠️  MongoDB关闭异常: {e}")
+    
     print("✅ 所有数据库连接已关闭")
