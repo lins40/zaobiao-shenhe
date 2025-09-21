@@ -130,6 +130,14 @@ class BusinessLogger:
             audit_time_seconds=audit_time,
             timestamp=datetime.utcnow().isoformat()
         )
+    
+    def info(self, message: str, **kwargs):
+        """通用信息日志"""
+        self.logger.info(message, **kwargs)
+    
+    def warning(self, message: str, **kwargs):
+        """通用警告日志"""
+        self.logger.warning(message, **kwargs)
 
 
 class ErrorLogger:
@@ -177,6 +185,14 @@ class ErrorLogger:
             timestamp=datetime.utcnow().isoformat(),
             exc_info=True
         )
+    
+    def error(self, message: str, **kwargs):
+        """通用错误日志"""
+        self.logger.error(message, **kwargs)
+    
+    def warning(self, message: str, **kwargs):
+        """通用警告日志"""
+        self.logger.warning(message, **kwargs)
 
 
 # 全局日志器实例

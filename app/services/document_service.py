@@ -1,6 +1,6 @@
 """
-文档服务层
-集成文档管理、解析、审核等功能
+文档服务层 - Week 3 增强版本
+集成文档管理、解析、审核等功能，添加文件存储和解析服务
 """
 import os
 from typing import Optional, List, Dict, Any
@@ -12,9 +12,11 @@ from datetime import datetime
 from app.models.document import Document, DocumentStatus, AuditStatus
 from app.services.external.textin_client import get_textin_client, ParseResult
 from app.services.external.deepseek_client import get_deepseek_client
+from app.services.file_storage_service import file_storage_service
 from app.utils.database_base import DatabaseBase
 from app.utils.cache_manager import cache_manager, cached
 from app.core.config import get_settings
+from app.core.logging import business_logger, error_logger
 
 settings = get_settings()
 
@@ -34,29 +36,42 @@ class DocumentService:
         content_type: str,
         uploaded_by: Optional[str] = None
     ) -> Document:
-        """上传文档"""
-        # 生成唯一文件名
-        timestamp = int(time.time())
-        file_ext = Path(filename).suffix
-        unique_filename = f"{timestamp}_{filename}"
-        file_path = self.upload_dir / unique_filename
-        
-        # 保存文件
-        with open(file_path, 'wb') as f:
-            f.write(file_content)
-        
-        # 创建文档记录
-        document_data = {
-            "filename": unique_filename,
-            "original_filename": filename,
-            "file_path": str(file_path),
-            "file_size": len(file_content),
-            "content_type": content_type,
-            "status": DocumentStatus.UPLOADED,
-            "uploaded_by": uploaded_by
-        }
-        
-        document = self.db.create(document_data)
+        """上传文档 - Week 3 增强版本"""
+        try:
+            # 使用文件存储服务保存文件
+            storage_result = await file_storage_service.save_file(
+                filename=filename,
+                content=file_content,
+                uploaded_by=uploaded_by or 'system'
+            )
+            
+            if not storage_result['success']:
+                raise ValueError(f"文件保存失败: {storage_result['error']}")
+            
+            file_info = storage_result['file_info']
+            
+            # 创建文档记录
+            document_data = {
+                "filename": file_info['stored_filename'],
+                "original_filename": file_info['original_filename'],
+                "file_path": file_info['file_path'],
+                "file_size": file_info['file_size'],
+                "content_type": file_info['mime_type'],
+                "status": DocumentStatus.UPLOADED,
+                "uploaded_by": uploaded_by or 'system',
+                "file_category": file_info['file_category'],
+                "file_hash": file_info['file_hash'],
+                "upload_time": datetime.now()
+            }
+            
+            document = self.db.create(document_data)
+            
+            business_logger.info(f"文档上传成功: {filename} -> ID: {document.id}")
+            return document
+            
+        except Exception as e:
+            error_logger.error(f"文档上传失败: {filename}, {e}")
+            raise
         
         # 异步触发解析
         asyncio.create_task(self.parse_document_async(document.id))

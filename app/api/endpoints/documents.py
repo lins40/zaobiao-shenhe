@@ -1,6 +1,6 @@
 """
-文档管理API接口 - Week 2 重构版本
-集成了外部API客户端、缓存管理、服务层等功能
+文档管理API接口 - Week 3 增强版本
+集成了文件存储服务、解析服务、任务管理等功能
 """
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -11,6 +11,7 @@ import time
 from datetime import datetime
 
 from app.services.document_service import document_service
+from app.services.file_storage_service import file_storage_service
 from app.utils.cache_manager import RateLimiter
 from app.core.config import get_settings
 from app.core.logging import business_logger, error_logger
@@ -411,3 +412,154 @@ async def parse_document_task(document_id: str):
             success=False,
             error=str(e)
         )
+
+
+# ========== Week 3 新增API端点 ==========
+
+@router.get("/storage/stats", summary="获取存储统计信息")
+async def get_storage_stats() -> Dict[str, Any]:
+    """
+    获取文件存储统计信息
+    """
+    try:
+        stats = file_storage_service.get_storage_stats()
+        return {
+            "success": True,
+            "data": stats
+        }
+    except Exception as e:
+        error_logger.error(f"获取存储统计失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取存储统计失败: {str(e)}")
+
+
+@router.get("/supported-types", summary="获取支持的文件类型")
+async def get_supported_file_types() -> Dict[str, Any]:
+    """
+    获取系统支持的文件类型信息
+    """
+    from app.services.file_storage_service import FileTypeValidator
+    
+    try:
+        return {
+            "success": True,
+            "data": {
+                "extensions": FileTypeValidator.get_supported_extensions(),
+                "categories": FileTypeValidator.get_supported_categories(),
+                "max_file_size": settings.max_file_size,
+                "max_file_size_mb": settings.max_file_size / (1024 * 1024)
+            }
+        }
+    except Exception as e:
+        error_logger.error(f"获取支持文件类型失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取支持文件类型失败: {str(e)}")
+
+
+@router.post("/validate", summary="验证文件类型")
+async def validate_file_type(file: UploadFile = File(...)) -> Dict[str, Any]:
+    """
+    验证文件类型是否支持（不保存文件）
+    """
+    try:
+        # 读取文件内容进行验证
+        content = await file.read()
+        
+        from app.services.file_storage_service import FileTypeValidator
+        validation_result = FileTypeValidator.validate_file_type(file.filename, content)
+        
+        return {
+            "success": True,
+            "data": validation_result
+        }
+        
+    except Exception as e:
+        error_logger.error(f"文件类型验证失败: {e}")
+        raise HTTPException(status_code=500, detail=f"文件类型验证失败: {str(e)}")
+
+
+@router.get("/duplicates/{file_hash}", summary="检查文件是否重复")
+async def check_file_duplicate(file_hash: str) -> Dict[str, Any]:
+    """
+    基于文件hash检查是否为重复文件
+    """
+    try:
+        existing_path = await file_storage_service.check_file_exists(file_hash)
+        
+        return {
+            "success": True,
+            "data": {
+                "is_duplicate": existing_path is not None,
+                "existing_path": existing_path
+            }
+        }
+        
+    except Exception as e:
+        error_logger.error(f"检查文件重复失败: {e}")
+        raise HTTPException(status_code=500, detail=f"检查文件重复失败: {str(e)}")
+
+
+@router.post("/batch/upload", summary="批量上传文档")
+async def batch_upload_documents(
+    files: List[UploadFile] = File(...),
+    uploaded_by: Optional[str] = Query(None, description="上传者")
+) -> Dict[str, Any]:
+    """
+    批量上传多个文档
+    """
+    if len(files) > 10:  # 限制批量上传数量
+        raise HTTPException(status_code=400, detail="批量上传文件数量不能超过10个")
+    
+    results = []
+    
+    for file in files:
+        try:
+            # 限流检查
+            allowed, info = upload_limiter.is_allowed(f"batch_upload_{uploaded_by or 'anonymous'}")
+            if not allowed:
+                results.append({
+                    "filename": file.filename,
+                    "success": False,
+                    "error": f"上传限流，请{info['retry_after']}秒后重试"
+                })
+                continue
+            
+            # 读取文件内容
+            file_content = await file.read()
+            
+            # 上传文档
+            document = await document_service.upload_document(
+                file_content=file_content,
+                filename=file.filename,
+                content_type=file.content_type,
+                uploaded_by=uploaded_by
+            )
+            
+            results.append({
+                "filename": file.filename,
+                "success": True,
+                "document_id": document.id,
+                "stored_filename": document.filename
+            })
+            
+        except Exception as e:
+            error_logger.error(f"批量上传文件失败: {file.filename}, {e}")
+            results.append({
+                "filename": file.filename,
+                "success": False,
+                "error": str(e)
+            })
+    
+    # 统计结果
+    success_count = sum(1 for r in results if r['success'])
+    total_count = len(results)
+    
+    return {
+        "success": True,
+        "data": {
+            "results": results,
+            "summary": {
+                "total": total_count,
+                "success": success_count,
+                "failed": total_count - success_count
+            }
+        }
+    }
